@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>勤怠管理システム</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Noto+Sans+JP:wght@300;400&display=swap');
+
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background: #0a0a1a;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .font-orbitron {
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    /* 背景のグリッド線 */
+    .grid-background {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        linear-gradient(rgba(0, 255, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 255, 0.1) 1px, transparent 1px);
+      background-size: 40px 40px;
+      z-index: -1;
+      animation: pan-grid 60s linear infinite;
+    }
+
+    @keyframes pan-grid {
+      0% { background-position: 0 0; }
+      100% { background-position: 480px 480px; }
+    }
+
+    /* Glassmorphism Effect */
+    .glass-panel {
+      background: rgba(10, 20, 40, 0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(0, 255, 255, 0.2);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    /* ボタンのスタイル */
+    .control-btn {
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+      border: 1px solid;
+      text-shadow: 0 0 5px currentColor;
+    }
+    .control-btn:before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 300%;
+      height: 300%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.2), transparent 40%);
+      transform: translate(-50%, -50%) scale(0);
+      transition: all 0.5s ease;
+    }
+    .control-btn:hover:not(:disabled) {
+      box-shadow: 0 0 15px currentColor, 0 0 30px currentColor;
+    }
+    .control-btn:active:not(:disabled):before {
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0;
+      transition: transform 0s, opacity 0.5s;
+    }
+    .control-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ローディングスピナー */
+    .loader {
+      border-top-color: #00ffff;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* スクロールバーのスタイル */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: rgba(0, 255, 255, 0.05); }
+    ::-webkit-scrollbar-thumb { background: rgba(0, 255, 255, 0.3); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0, 255, 255, 0.5); }
+  </style>
+</head>
+<body class="text-slate-200">
+  <div class="grid-background"></div>
+  
+  <div class="container mx-auto p-4 md:p-8 max-w-2xl min-h-screen flex flex-col justify-center relative z-10">
+    
+    <header class="text-center mb-8">
+      <h1 class="font-orbitron text-3xl md:text-4xl font-bold text-cyan-300 tracking-widest uppercase" style="text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;">
+        Kintai System
+      </h1>
+      <p class="text-cyan-200 opacity-80">勤怠管理システム</p>
+    </header>
+
+    <div id="control-panel" class="glass-panel p-6 rounded-2xl mb-8">
+      <div class="mb-6">
+        <label class="block text-sm font-medium text-cyan-200 mb-2">Operator Name</label>
+        <div id="name-display" class="w-full px-4 py-2 bg-black bg-opacity-30 border border-cyan-500/30 rounded-lg text-lg font-orbitron text-cyan-300">
+          <!-- JavaScriptで名前がここに表示されます -->
+        </div>
+      </div>
+      
+      <div id="button-container" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <button id="start-btn" class="control-btn w-full py-3 rounded-lg font-bold text-lg border-green-400 text-green-300">
+          勤務開始
+        </button>
+        <button id="end-btn" class="control-btn w-full py-3 rounded-lg font-bold text-lg border-red-400 text-red-300">
+          勤務終了
+        </button>
+      </div>
+
+      <div id="message-area" class="mt-4 text-center text-sm min-h-[20px] transition-all duration-300"></div>
+    </div>
+
+    <div id="status-panel" class="glass-panel p-6 rounded-2xl flex-grow flex flex-col overflow-hidden">
+      <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-bold text-cyan-300 font-orbitron">現在の勤務者</h2>
+          <div id="status-loader" class="loader ease-linear rounded-full border-4 border-t-4 border-gray-500 h-6 w-6 hidden"></div>
+      </div>
+      <div id="worker-list-container" class="overflow-y-auto pr-2 flex-grow">
+          <ul id="worker-list" class="space-y-3">
+             <!-- 勤務者リストがここに表示されます -->
+          </ul>
+          <p id="no-worker-msg" class="text-center text-slate-400 mt-4">現在、勤務中の人はいません。</p>
+      </div>
+    </div>
+    
+  </div>
+
+  <script>
+    // ▼▼▼ あなたの設定 ▼▼▼
+    // このHTMLファイルを使う人の名前をここに書きます
+    const USER_NAME = "嶋村"; 
+    
+    // GASをデプロイして取得した新しいウェブアプリのURLを貼り付けてください
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz2FNcMIO2_bL1mU9sPkusAByFJ5bwtFVx34JuJ73nTwbtsF89IcrJfQT5IUYkeoTHQ/exec";
+    // ▲▲▲ 設定はここまで ▲▲▲
+
+    // ----------------------------------------
+    // Sound Effects
+    // ----------------------------------------
+    // より互換性の高い音声データに変更
+    const sounds = {
+      start: new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU9vT18AAACAgICAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA-"),
+      end: new Audio("data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABgAZGF0YQISAACAgICAgICAgICAgICAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw-"),
+      error: new Audio("data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABgAZGF0YQISAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg'"),
+    };
+    sounds.start.volume = 0.5;
+    sounds.end.volume = 0.5;
+    sounds.error.volume = 0.3;
+
+    function playSound(type) {
+        if (sounds[type]) {
+            sounds[type].currentTime = 0; // 再生位置を最初に戻す
+            sounds[type].play().catch(e => console.error("Sound play failed:", e));
+        }
+    }
+
+    // ----------------------------------------
+    // 要素の取得
+    // ----------------------------------------
+    const nameDisplay = document.getElementById('name-display');
+    const startBtn = document.getElementById('start-btn');
+    const endBtn = document.getElementById('end-btn');
+    const messageArea = document.getElementById('message-area');
+    const workerList = document.getElementById('worker-list');
+    const noWorkerMsg = document.getElementById('no-worker-msg');
+    const statusLoader = document.getElementById('status-loader');
+    
+    const userStorageKey = `workAppId_API_${USER_NAME}`;
+
+    // ----------------------------------------
+    // API通信関数
+    // ----------------------------------------
+    async function callGasApi(action, payload = {}) {
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action, ...payload })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            if (result.status !== 'success') { // GAS側の 'success' から 'status' に変更
+                throw new Error(result.message || 'APIからエラーが返されました。');
+            }
+            return result.data;
+        } catch (error) {
+            console.error('API Call Error:', error);
+            handleError(error);
+            throw error;
+        }
+    }
+
+    // ----------------------------------------
+    // 初期化処理
+    // ----------------------------------------
+    document.addEventListener('DOMContentLoaded', () => {
+      nameDisplay.textContent = USER_NAME;
+      checkStatusOnLoad(USER_NAME);
+      updateStatus();
+      setInterval(updateStatus, 15000);
+    });
+
+    // ----------------------------------------
+    // イベントリスナー
+    // ----------------------------------------
+    startBtn.addEventListener('click', handleStart);
+    endBtn.addEventListener('click', handleEnd);
+
+    // ----------------------------------------
+    // メイン関数
+    // ----------------------------------------
+
+    async function checkStatusOnLoad(name) {
+      setLoading(true);
+      try {
+        const data = await callGasApi('checkUserStatus', { name });
+        if (data.isWorking) {
+          localStorage.setItem(userStorageKey, data.id);
+          setWorkingState(true);
+          showMessage('勤務状態を復元しました。', 'info');
+        } else {
+          localStorage.removeItem(userStorageKey);
+          setWorkingState(false);
+        }
+      } catch (error) {
+        const savedId = localStorage.getItem(userStorageKey);
+        setWorkingState(!!savedId);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function handleStart() {
+      playSound('start');
+      setLoading(true);
+      try {
+        const data = await callGasApi('startWork', { name: USER_NAME });
+        localStorage.setItem(userStorageKey, data.id);
+        showMessage(data.message, 'success');
+        setWorkingState(true);
+        updateStatus();
+      } catch (error) {
+        checkStatusOnLoad(USER_NAME);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function handleEnd() {
+      playSound('end');
+      const id = localStorage.getItem(userStorageKey);
+      if (!id) {
+        showMessage('ローカルIDが見つかりません。リロードしてください。', 'error');
+        setWorkingState(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const data = await callGasApi('endWork', { id });
+        localStorage.removeItem(userStorageKey);
+        showMessage(data.message, 'success');
+        setWorkingState(false);
+        updateStatus();
+      } catch (error) {
+        checkStatusOnLoad(USER_NAME);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function updateStatus() {
+      statusLoader.classList.remove('hidden');
+      try {
+        const workers = await callGasApi('getStatus');
+        workerList.innerHTML = '';
+
+        if (workers.length === 0) {
+          noWorkerMsg.classList.remove('hidden');
+        } else {
+          noWorkerMsg.classList.add('hidden');
+          workers.forEach(worker => {
+            const li = document.createElement('li');
+            li.className = 'glass-panel p-3 rounded-lg flex justify-between items-center border border-cyan-500/20';
+            li.innerHTML = `
+              <span class="text-cyan-200">${worker.name}</span>
+              <span class="font-mono bg-black bg-opacity-30 px-2 py-1 rounded text-cyan-300 text-sm">${worker.elapsedTime}</span>
+            `;
+            workerList.appendChild(li);
+          });
+        }
+      } catch (error) {
+        showMessage('勤務者リストの更新に失敗しました。', 'error');
+      } finally {
+        statusLoader.classList.add('hidden');
+      }
+    }
+
+    // ----------------------------------------
+    // UIヘルパー関数
+    // ----------------------------------------
+
+    function handleError(error) {
+      playSound('error');
+      showMessage(`エラーが発生しました: ${error.message}`, 'error');
+    }
+
+    function showMessage(msg, type = 'info') {
+      messageArea.textContent = msg;
+      messageArea.classList.remove('text-green-400', 'text-red-400', 'text-cyan-300');
+      if (type === 'success') {
+        messageArea.classList.add('text-green-400');
+      } else if (type === 'error') {
+        messageArea.classList.add('text-red-400');
+      } else {
+        messageArea.classList.add('text-cyan-300');
+      }
+      setTimeout(() => { 
+          if(messageArea.textContent === msg) {
+              messageArea.textContent = ''
+          }
+      }, 5000);
+    }
+    
+    function setWorkingState(isWorking) {
+      startBtn.disabled = isWorking;
+      endBtn.disabled = !isWorking;
+    }
+
+    function setLoading(isLoading) {
+      const isCurrentlyWorking = !!localStorage.getItem(userStorageKey);
+      
+      if(isLoading) {
+        document.body.classList.add('cursor-wait');
+        startBtn.disabled = true;
+        endBtn.disabled = true;
+      } else {
+        document.body.classList.remove('cursor-wait');
+        setWorkingState(isCurrentlyWorking);
+      }
+    }
+  </script>
+</body>
+</html>
+
